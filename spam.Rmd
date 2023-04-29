@@ -1,0 +1,159 @@
+---
+title: "EMAIL CLASSIFICATION"
+output: pdf_document
+date: "2023-04-17"
+---
+
+## DATA LOADING
+```{r}
+data=read.csv("spam_ham_dataset.csv")
+names(data)=c("col","label","text","label_num")
+
+```
+
+## DATA PREPROCESSING
+
+```{r}
+#Check the overview of the data
+head(data)
+```
+
+```{r}
+#Check for any missing values
+sum(is.na(data))
+```
+
+There are no missing values so there is no need of deleting any rows.
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+#Plot a boxplot to check whether there are any outliers in the dataset.
+library(ggplot2)
+ggplot(data, aes(y = data$col)) +
+  geom_boxplot()
+```
+
+There are no outliers from the dataset. Now we will check the datatypes of the columns.
+```{r}
+#Check the datatypes of each column.
+str(data)
+```
+
+Yes, all the columns are having the correct datatypes. Because if we see the label it should be categorical but a separate column has been created to represent it as a category. That is "label_num".
+
+
+```{r}
+data$text<-gsub('[^[:alnum:] ]', ' ',data$text )
+data$text<-gsub('Subject','',data$text)
+head(data)
+```
+The text attribute is modified to remove punctuation marks and other special characters within the text. Also the subject tag is removed
+as it remains the same. This helps identify key words in classification.
+
+
+
+```{r}
+library(tm)
+library(e1071)
+
+dat_corpus <- Corpus(VectorSource(data$text))
+
+# Clean the corpus
+dat_corpus <- tm_map(dat_corpus, tolower)
+dat_corpus <- tm_map(dat_corpus, removeNumbers)
+dat_corpus <- tm_map(dat_corpus, removePunctuation)
+dat_corpus <- tm_map(dat_corpus, stripWhitespace)
+dat_corpus <- tm_map(dat_corpus, removeWords, stopwords("english"))
+dat_dtm <- DocumentTermMatrix(dat_corpus)
+dat_dtm
+```
+Removing terms which don't occur frequently
+```{r}
+sdtm<-removeSparseTerms(dat_dtm,0.95)
+sdtm
+```
+Converting the word sparse matrix to a dataframe 
+```{r}
+word_sparse=data.frame(as.matrix(sdtm),email_class=data$label)
+head(word_sparse)
+```
+
+## DATA SPLITTING
+
+```{r}
+library(caret)
+# Set seed
+set.seed(123)
+
+
+
+# Splitting the dataset into training and testing sets
+
+train_index <- createDataPartition(word_sparse$email_class, p = 0.7, list = FALSE)
+train_data <- word_sparse[train_index, ]
+test_data <- word_sparse[-train_index, ]
+
+```
+
+```{r}
+train_data$email_class <- factor(train_data$email_class, levels = c("spam", "ham"))
+test_data$email_class <- factor(test_data$email_class, levels = c("spam", "ham"))
+```
+
+## BUILDING NAIVE BAYES CLASSIFICATION MODEL
+```{r}
+# Building the Naive Bayes Classifier Model
+library(e1071)
+nb_model <- naiveBayes(email_class ~ ., data = train_data)
+```
+
+```{r}
+# Use the classifier to make predictions on the test data
+predicted_labels = predict(nb_model, newdata = test_data[,-ncol(test_data)])
+```
+
+Our model has been built. Now we will check the accuracy of the model.
+```{r}
+levels(predicted_labels)
+```
+```{r}
+levels(test_data$email_class)
+
+```
+
+```{r}
+library(caret)
+confusionMatrix(predicted_labels, test_data$email_class)
+```
+The accuracy of the model is 70%.
+
+# Logistic Regression Model
+
+
+```{r}
+X_train <- data.matrix(train_data[, -ncol(train_data)])
+Y_train <- (train_data$email_class)
+X_test <- data.matrix(test_data[, -ncol(test_data)])
+Y_test <- (test_data$email_class)
+```
+
+Training the logistic regression model
+```{r}
+library(glmnet)
+lr<-cv.glmnet(X_train,Y_train, family = "binomial")
+```
+
+Predicting test data
+```{r}
+prediction_lr<-predict(lr,newx=X_test,type="class")
+```
+
+Accuracy details
+```{r}
+library(caret)
+confusionMatrix(as.factor(prediction_lr),as.factor(Y_test))
+```
